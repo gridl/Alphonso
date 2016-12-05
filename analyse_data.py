@@ -1,9 +1,11 @@
+from collections import Counter, defaultdict
 from gen_data import DB
 from helper import IO, Constant
 
 import datetime
 import sys
 
+def sdt_to_date(dt): return datetime.datetime.strptime(dt, "%Y-%m-%dT%H:%M:%S")
 
 class Menu:
     def __init__(self):
@@ -54,49 +56,150 @@ class ReadDB:
     def load_vship_data(self):
         self.vship_data = IO.read_json(DB.vship_db_file)
 
+chn_id_name = {}
+pgm_id_genre_title = {}
+def get_chn_id_name(chn_data):
+    for chn in chn_data:
+        chn_id_name[chn['_id']] = chn['chn_name']
 
-class Analytics:
-    def __init__(self, start_time, end_time):
+def get_pgm_id_genre_title(pgm_data):
+    for pgm in pgm_data:
+        pgm_id_genre_title[pgm['_id']] = (pgm['pgm_genres'], pgm['pgm_title'])
+
+class Analytics(ReadDB):
+
+
+    def __init__(self, start_time=None, end_time=None):
         self.start_time = start_time
         self.end_time = end_time
 
+    def _search_dt(self, start, end, dt_search):
+        """
+        Search for a given datetime in viewership data and return its index.
+        """
+
+        while start <= end:
+            mid = (start + end)/2
+            if sdt_to_date(self.vship_data[mid]['view_dt']) == dt_search:
+                return mid
+            if sdt_to_date(self.vship_data[mid]['view_dt']) > dt_search:
+                end = mid-1
+            else:
+                start = mid+1
+
+        return end
+
+
+    def _get_vship_with_duration(self):
+        """
+        Filter the viewership data in a specified datetime range.
+        """
+        end_index = self._search_dt(0, len(self.vship_data), self.end_time)
+        start_index = self._search_dt(0, len(self.vship_data), self.start_time)
+
+        req_vship_data = self.vship_data[start_index: end_index+1]
+        chn_list = []
+        vwr_count = end_index - start_index + 1
+        chn_prog_map = defaultdict(list)
+
+        for vship in req_vship_data:
+            chn_id = vship['chn_id']; chn_list.append(chn_id)
+        chn_data = Counter(chn_list)
+
+        # Map channel_id -> (pgm_id, duration) for airings during specified time
+        for air in self.air_data:
+            if (sdt_to_date(air['start_dt']) >= self.start_time and
+                sdt_to_date(air['end_dt']) <= self.end_time):
+                duration = sdt_to_date(air['end_dt']) - sdt_to_date(air['start_dt'])
+                chn_prog_map[air['chn_id']].append((air['pgm_id'], duration))
+
+        return vwr_count, chn_data, chn_prog_map
+
+
     def get_genre_with_duration(self):
-        pass
+        _, _, chn_prog_map = self._get_vship_with_duration()
+
+        genre_map = defaultdict(list)
+        for chn in chn_prog_map:
+            for prog_data in chn_prog_map[chn]:
+                for genre in pgm_id_genre_title[prog_data[0]][0]:
+                    genre_map[genre].append(prog_data[-1])
+
+        print {genre: reduce(lambda x,y: x+y, genre_map[genre]) for genre in genre_map}
+
+
 
     def get_genre_with_viewers(self):
-        pass
+        _, chn_data, chn_prog_map = self._get_vship_with_duration()
+        genre_list = []
+        for chn in chn_prog_map:
+            for prog_data in chn_prog_map[chn]:
+                for genre in pgm_id_genre_title[prog_data[0]][0]:
+                    genre_list.append(genre)
+
+        print Counter(genre_list)
+
 
     def get_channel_with_duration(self):
-        pass
+        """
+        Return map of chn_id -> total duration.
+        """
+        _, _, chn_prog_map = self._get_vship_with_duration()
+
+        print {
+                 chn_id_name[chn]: reduce(lambda x, y: x+y, [ prog_data[-1]
+                                          for prog_data in chn_prog_map[chn] ])
+                 for chn in chn_prog_map
+               }
 
     def get_channel_with_viewers(self):
-        pass
+        """
+        Return map of chn_id -> viewer count
+        """
+        _, chn_data, _ = self._get_vship_with_duration()
+
+        for chn_id in chn_data:
+            print chn_id_name[chn_id], chn_data[chn_id]
+
 
     def get_channel_with_duration_in_prime_time(self):
-        pass
+        self.get_channel_with_duration()
+
 
     def get_channel_with_viewers_in_prime_time(self):
-        pass
+        self.get_channel_with_viewers()
 
 
 def main():
-    rdb = ReadDB()
-    rdb.load_vwr_data(); rdb.load_chn_data()
-    rdb.load_pgm_data(); rdb.load_air_data()
-    rdb.load_vship_data()
+    proc = Analytics()
+    proc.load_vwr_data()
+    proc.load_chn_data()
+    proc.load_pgm_data()
+    proc.load_air_data()
+    proc.load_vship_data()
+    proc.vship_data = sorted(proc.vship_data, key=lambda d: sdt_to_date(d['view_dt']))
+    get_chn_id_name(proc.chn_data)
+    get_pgm_id_genre_title(proc.pgm_data)
+    funct = [sys.exit,
+             proc.get_genre_with_duration,
+             proc.get_genre_with_viewers,
+             proc.get_channel_with_duration,
+             proc.get_channel_with_viewers,
+             proc.get_channel_with_duration_in_prime_time,
+             proc.get_channel_with_viewers_in_prime_time]
+
     choice = 1
+
     while choice:
         choice, start_time, end_time = Menu.print_menu()
-        proc = Analytics(start_time, end_time)
-        functions = [sys.exit,
-                     proc.get_genre_with_duration,
-                     proc.get_genre_with_viewers,
-                     proc.get_channel_with_duration,
-                     proc.get_channel_with_viewers,
-                     proc.get_channel_with_duration_in_prime_time,
-                     proc.get_channel_with_viewers_in_prime_time]
-        if not choice: functions[choice]("See ya!")
-    else: functions[choice]()
+        if choice > 6:
+            print "Invalid Choice"; continue;
+        if not choice:
+            funct[choice]("See ya!")
+        else:
+            proc.start_time, proc.end_time = start_time, end_time
+            funct[choice]()
+
 
 
 
