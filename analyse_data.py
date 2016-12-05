@@ -23,7 +23,7 @@ class Menu:
         print "6. Most popular Channel (viewers count wise) during prime time(5am-10am, 1pm-3pm, 7pm-10pm)."
         print "0. Exit"
         choice = int(raw_input("Enter the option number for the corresponding insights.\t"))
-        if not choice:
+        if choice in [0, 5, 6]:
             return choice, None, None
         print "-"*48
         print "---TIME---"
@@ -73,29 +73,42 @@ class Analytics(ReadDB):
         self.start_time = start_time
         self.end_time = end_time
 
-    def _search_dt(self, start, end, dt_search):
+    def _search_dt(self, start, end, dt_search, prime_search=False):
         """
         Search for a given datetime in viewership data and return its index.
+        O(logN)
         """
 
         while start <= end:
             mid = (start + end)/2
-            if sdt_to_date(self.vship_data[mid]['view_dt']) == dt_search:
-                return mid
-            if sdt_to_date(self.vship_data[mid]['view_dt']) > dt_search:
-                end = mid-1
+            if prime_search is False:
+                if sdt_to_date(self.vship_data[mid]['view_dt']) == dt_search:
+                    return mid
+                if sdt_to_date(self.vship_data[mid]['view_dt']) > dt_search:
+                    end = mid-1
+                else:
+                    start = mid+1
             else:
-                start = mid+1
+                if sdt_to_date(self.vship_data[mid]['view_dt']).time() == dt_search:
+                    return mid
+                if sdt_to_date(self.vship_data[mid]['view_dt']).time() > dt_search:
+                    end = mid-1
+                else:
+                    start = mid+1
 
         return end
 
 
-    def _get_vship_with_duration(self):
+    def _get_vship_with_duration(self, prime_search=False):
         """
         Filter the viewership data in a specified datetime range.
+        :return:
+            vwr_count: Total viewer count for specified duration.
+            chn_data: The viewer count per channel.
+            chn_prog_map: Map of channel_id -> (program_id, duration)
         """
-        end_index = self._search_dt(0, len(self.vship_data), self.end_time)
-        start_index = self._search_dt(0, len(self.vship_data), self.start_time)
+        end_index = self._search_dt(0, len(self.vship_data), self.end_time, prime_search)
+        start_index = self._search_dt(0, len(self.vship_data), self.start_time, prime_search)
 
         req_vship_data = self.vship_data[start_index: end_index+1]
         chn_list = []
@@ -108,10 +121,17 @@ class Analytics(ReadDB):
 
         # Map channel_id -> (pgm_id, duration) for airings during specified time
         for air in self.air_data:
-            if (sdt_to_date(air['start_dt']) >= self.start_time and
-                sdt_to_date(air['end_dt']) <= self.end_time):
-                duration = sdt_to_date(air['end_dt']) - sdt_to_date(air['start_dt'])
-                chn_prog_map[air['chn_id']].append((air['pgm_id'], duration))
+            if prime_search:
+                if (sdt_to_date(air['start_dt']).time() >= self.start_time and
+                    sdt_to_date(air['end_dt']).time() <= self.end_time):
+                    duration = sdt_to_date(air['end_dt']) - sdt_to_date(air['start_dt'])
+                    chn_prog_map[air['chn_id']].append((air['pgm_id'], duration))
+            else:
+                if (sdt_to_date(air['start_dt']) >= self.start_time and
+                    sdt_to_date(air['end_dt']) <= self.end_time):
+                    duration = sdt_to_date(air['end_dt']) - sdt_to_date(air['start_dt'])
+                    chn_prog_map[air['chn_id']].append((air['pgm_id'], duration))
+
 
         return vwr_count, chn_data, chn_prog_map
 
@@ -140,11 +160,11 @@ class Analytics(ReadDB):
         print Counter(genre_list)
 
 
-    def get_channel_with_duration(self):
+    def get_channel_with_duration(self, prime_search=False):
         """
         Return map of chn_id -> total duration.
         """
-        _, _, chn_prog_map = self._get_vship_with_duration()
+        _, _, chn_prog_map = self._get_vship_with_duration(prime_search)
 
         print {
                  chn_id_name[chn]: reduce(lambda x, y: x+y, [ prog_data[-1]
@@ -152,22 +172,48 @@ class Analytics(ReadDB):
                  for chn in chn_prog_map
                }
 
-    def get_channel_with_viewers(self):
+    def get_channel_with_viewers(self, prime_search=False):
         """
         Return map of chn_id -> viewer count
         """
-        _, chn_data, _ = self._get_vship_with_duration()
+        _, chn_data, _ = self._get_vship_with_duration(prime_search)
 
         for chn_id in chn_data:
             print chn_id_name[chn_id], chn_data[chn_id]
 
 
     def get_channel_with_duration_in_prime_time(self):
-        self.get_channel_with_duration()
+        print "---PRIME TIME (5am - 10am)---"
+        self.start_time = datetime.time(hour=5)
+        self.end_time = datetime.time(hour=10)
+        self.get_channel_with_duration(True)
+
+        print "---PRIME TIME (1pm - 3pm)---"
+        self.start_time = datetime.time(hour=13)
+        self.end_time = datetime.time(hour=15)
+        self.get_channel_with_duration(True)
+
+        print "---PRIME TIME (7pm - 10pm)---"
+        self.start_time = datetime.time(hour=19)
+        self.end_time = datetime.time(hour=22)
+        self.get_channel_with_duration(True)
 
 
     def get_channel_with_viewers_in_prime_time(self):
-        self.get_channel_with_viewers()
+        print "---PRIME TIME (5am - 10am)---"
+        self.start_time = datetime.time(hour=5)
+        self.end_time = datetime.time(hour=10)
+        self.get_channel_with_viewers(True)
+
+        print "---PRIME TIME (1pm - 3pm)---"
+        self.start_time = datetime.time(hour=13)
+        self.end_time = datetime.time(hour=15)
+        self.get_channel_with_viewers(True)
+
+        print "---PRIME TIME (7pm - 10pm)---"
+        self.start_time = datetime.time(hour=19)
+        self.end_time = datetime.time(hour=22)
+        self.get_channel_with_viewers(True)
 
 
 def main():

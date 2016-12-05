@@ -76,7 +76,7 @@ class DB:
 def main():
     start = time.time()
     db = DB()
-    vwr_ids = db.gen_and_store_vwr_collection(10)
+    vwr_ids = db.gen_and_store_vwr_collection(1000)
     chn_ids = db.gen_and_store_chn_collection()
     pgm_ids = db.gen_and_store_pgm_collection()
     air_ids = db.gen_and_store_air_collection(chn_ids, pgm_ids)
