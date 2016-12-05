@@ -133,7 +133,11 @@ class Analytics(ReadDB):
                     chn_prog_map[air['chn_id']].append((air['pgm_id'], duration))
 
 
-        return vwr_count, chn_data, chn_prog_map
+        filter_chn_prog_map = {vwr['chn_id']: chn_prog_map[vwr['chn_id']]
+                                for vwr in req_vship_data
+                                    if vwr['chn_id'] in chn_prog_map}
+
+        return vwr_count, chn_data, filter_chn_prog_map
 
 
     def get_genre_with_duration(self):
